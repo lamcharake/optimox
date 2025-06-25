@@ -1,0 +1,28 @@
+name: Publish to NPM
+
+on:
+  push:
+    branches:
+      - main # Trigger on every push to main
+
+jobs:
+  publish:
+    name: Publish to NPM Registry
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install and Publish
+        run: |
+          npm ci
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
