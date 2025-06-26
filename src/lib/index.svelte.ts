@@ -37,6 +37,8 @@ const store = new Map<
 	}
 >();
 
+if (import.meta.env.DEV) (window as any).QUERY_CACHE_STORE = store;
+
 export function query<T>(key: any[], fn: Fn<T>, opts: QueryOptions = {}) {
 	if (key.length === 0) throw new Error('Query key list must not be empty');
 	// Prevent query ending with `undefined` , `null` or `NaN` , `''` from being called or cached except for number 0
