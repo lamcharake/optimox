@@ -98,7 +98,7 @@ export function mutation<T, V>(fn: (vars: V) => Promise<T>, opts: MutationOption
 			state.error = null;
 
 			try {
-				opts.onMutation?.(vars);
+				opts.onMutate?.(vars);
 				const result = await fn(vars as V);
 				state.result = result;
 				opts.onSuccess?.(result);
@@ -106,7 +106,7 @@ export function mutation<T, V>(fn: (vars: V) => Promise<T>, opts: MutationOption
 			} catch (err) {
 				const error = err instanceof Error ? err : Error(String(err));
 				state.error = error;
-				opts.onFailure?.(error);
+				opts.onError?.(error);
 				if (import.meta.env.DEV) throw error;
 			} finally {
 				state.pending = false;
@@ -156,7 +156,7 @@ export class QueryCache {
 	/**
 	 * Clear the entire cache store OR specific query cache by prefix key in the list
 	 */
-	static invalidate(key: any[] = [], flag?: { bulk: false }): void {
+	static invalidate(key: any[] = [], flag?: { bulk: boolean }): void {
 		if (!key.length) {
 			store.clear();
 			return;
@@ -201,7 +201,7 @@ type MutationOptions<T, V = any> = {
 	/**
 	 * Perform an action before the request is sent, Can be used for optimistic updates
 	 */
-	onMutation?: (vars?: V) => void;
+	onMutate?: (vars?: V) => void;
 	/**
 	 * Perform an action when the request succeeds
 	 */
@@ -209,5 +209,5 @@ type MutationOptions<T, V = any> = {
 	/**
 	 * Perform an action when the request fails, Can be used for rolling back UI updates
 	 */
-	onFailure?: (err: Error) => void;
+	onError?: (err: Error) => void;
 };
