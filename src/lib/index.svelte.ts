@@ -37,30 +37,33 @@ const store = new Map<
 	}
 >();
 
-if (import.meta.env.DEV) (window as any).QUERY_CACHE_STORE = store;
+if (import.meta.env.DEV) (window as any).QC = store;
 
 export function query<T>(key: any[], fn: Fn<T>, opts: QueryOptions = {}) {
-	if (key.length === 0) throw new Error('Query key list must not be empty');
 	// Prevent query ending with `undefined` , `null` or `NaN` , `''` from being called or cached except for number 0
-	if (!key.at(-1) && key.at(-1) !== 0) return { data: null } as typeof state;
+	if (!key.at(-1) && key.at(-1) !== 0)
+		return { data: null, pending: false, refetching: false, error: null };
 
 	const id = JSON.stringify(key);
 	const cached = store.get(id);
 	if (cached?.state.pending || cached?.state.refetching) return cached.state; // debouncing guard for rapid successive calls to same query
 
-	if (cached?.opts.enabled) {
-		// Check if the query is stale, if yes, trigger it to make a cache refresh
-		const refresh = (cached.opts.refresh ?? configs.refresh!) * 60_000;
+	if (cached) {
+		// Check if the cached query is stale, if yes, trigger it to make a cache refresh
+		const refresh = cached.opts.refresh! * 60_000;
 		if (refresh > 0 && Date.now() - cached.timestamp > refresh) {
 			execute(id);
 			clearTimeout(cached.timeout);
-			// if TTL passed via options or the global configs is limitless, Never schedule a timeout to clear the cache
-			if (opts.ttl != Infinity || configs.ttl != Infinity)
-				cached.timeout = setTimeout(() => store.delete(id), (opts.ttl ?? configs.ttl!) * 60_000);
+			if (cached.opts.ttl != Infinity)
+				cached.timeout = setTimeout(() => store.delete(id), cached.opts.ttl! * 60_000);
 		}
-		// return the cached state if the query still fresh
+		// finally, return the cached state if the query still fresh
 		return cached.state;
 	}
+
+	opts.enabled ??= configs.enabled;
+	opts.ttl ??= configs.ttl;
+	opts.refresh ??= configs.refresh;
 
 	const state = $state({
 		data: null as T | null,
@@ -75,10 +78,11 @@ export function query<T>(key: any[], fn: Fn<T>, opts: QueryOptions = {}) {
 		fn,
 		opts,
 		timestamp: Date.now(),
-		timeout: setTimeout(() => store.delete(id), (opts.ttl ?? configs.ttl!) * 60_000)
+		timeout: setTimeout(() => store.delete(id), opts.ttl! * 60_000)
 	});
 
-	if (opts.enabled ?? configs.enabled) execute(id);
+	if (opts.enabled) execute(id);
+
 	return state;
 }
 
@@ -97,7 +101,7 @@ export function mutation<T, V>(fn: (vars: V) => Promise<T>, opts: MutationOption
 				opts.onMutation?.(vars);
 				const result = await fn(vars as V);
 				state.result = result;
-				opts.onSucceed?.(result);
+				opts.onSuccess?.(result);
 				return result;
 			} catch (err) {
 				const error = err instanceof Error ? err : Error(String(err));
@@ -150,25 +154,26 @@ export class QueryCache {
 	}
 
 	/**
-	 * Clear entire cache OR specific query cache by prefix key in the list
+	 * Clear the entire cache store OR specific query cache by prefix key in the list
 	 */
-	static clear(key: any[] = [], flag?: { bulk: false }) {
+	static invalidate(key: any[] = [], flag?: { bulk: false }): void {
 		if (!key.length) {
 			store.clear();
-			return this;
+			return;
 		}
 
 		const target = JSON.stringify(key);
 
-		if (!flag?.bulk) {
-			const cached = store.get(target);
-			if (cached) clearTimeout(cached.timeout);
-			store.delete(target);
-		} else
+		if (flag?.bulk) {
 			for (const [id, cached] of store)
-				if (id.startsWith(`["${key[0]}"`)) clearTimeout(cached.timeout), store.delete(id);
+				if (id.startsWith(`["${key[0]}"`))
+					clearTimeout(cached.timeout), (cached.state.data = null), store.delete(id);
+		} else {
+			const cached = store.get(target);
+			if (cached) clearTimeout(cached.timeout), (cached.state.data = null);
 
-		return this;
+			store.delete(target);
+		}
 	}
 }
 
@@ -200,7 +205,7 @@ type MutationOptions<T, V = any> = {
 	/**
 	 * Perform an action when the request succeeds
 	 */
-	onSucceed?: (data: T) => void;
+	onSuccess?: (data: T) => void;
 	/**
 	 * Perform an action when the request fails, Can be used for rolling back UI updates
 	 */
